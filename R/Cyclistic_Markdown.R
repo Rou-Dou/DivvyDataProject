@@ -1,4 +1,5 @@
 #################### Import Libraries ###################
+``` {R}
 
 library(ggmap)
 library(ggplot2)
@@ -13,7 +14,9 @@ library(data.table)
 library(broom)
 library(gridExtra)
 
+```
 ########################### Functions #####################################
+``` {R}
 
 # create function to find mode
 
@@ -70,9 +73,9 @@ trip_totals <- function (table_in, filter_name){
   
   return(b)
 }
-
+```
             ############ Data Import ############
-
+``` {R}
 
 list.files(pattern = 'd_ride') %>%
   map_df(~fread(header = FALSE, .)) -> d_ride_table
@@ -100,9 +103,9 @@ names(r_station_table) <- c('station_name', 'station_key')
 d_ride_table$started_at <- as_datetime(d_ride_table$started_at)
 d_ride_table$ended_at <- as_datetime(d_ride_table$ended_at)
 
-
+```
             ############ Table Creation #############
-
+``` {R}
 
 ## create ride table with only casual member entries    
 d_ride_table %>% filter(member_casual == 'casual') -> d_ride_table_c
@@ -191,9 +194,9 @@ rideable_type_count <- d_ride_table %>%
   summarize(Count = length(rideable_type)) %>%
   filter(rideable_type != "docked_bike")
 
-
+```
             ############ Analysis #############
-
+``` {R}
 
 ## find avg length of ride and the day of week mode for casual riders
 mean(d_ride_table_c$ride_in_seconds)/60 -> avg_ride_length_casual 
@@ -275,11 +278,11 @@ rm(sm,em,j, season, ride_count, member_type)
 
 gc()
 
-
+```
 
             ############ Data Plotting #############
 
-
+``` {R}
 ## create theme preset
 baseTheme <-   theme_classic() +
   theme(plot.title = element_text(hjust = .5, size = 13, face = 'bold',
@@ -305,7 +308,10 @@ continuousY <-  scale_y_continuous(name = paste("total_rides (",
                      seq(yScaleMin, yScaleMax,by=byValue),
                      labels = scales::comma)
 
+```
 
+
+``` {R}
 
 ## Plot member ride count for the last 12 months by weekday
 ggplot(d_ride_table,
@@ -325,6 +331,9 @@ ggplot(d_ride_table,
   facet_wrap(~member_casual) +
   baseTheme
 
+```
+
+``` {R}
 
 ## Plot Average ride length for members and casual riders
 d_avg_ride_by_day %>%
@@ -341,6 +350,9 @@ d_avg_ride_by_day %>%
   scale_fill_brewer(palette = "Paired") +
   baseTheme
 
+```
+
+``` {R}
 
 ##Plot bike type usage for both casual and member riders
 rideable_type_count %>%
@@ -358,6 +370,9 @@ rideable_type_count %>%
   scale_fill_brewer(palette = "Paired") +
   baseTheme
 
+```
+
+``` {R}
 
 ##create tables for donut graphs
 d_rides_by_season_c <- createDonut(d_rides_by_season, 'casual')
@@ -401,10 +416,28 @@ ggplot(d_rides_by_season_m, aes(ymax = ymax, ymin = ymin, xmax = 4,
   
   donutTheme -> g_2 ## assign graph 2
 
+```
+
+``` {R}
+
+#Rides by Season Casual
+g_1
+
+```
+
+``` {R}
+
+#Rides by Season Member
+g_2
+
+```
+
+``` {R}
+
   ##combine the donut graphs
   grid.arrange(g_1,  g_2, ncol = 2)
 
-  
+```  
 
             ############ Mapping #############
 
@@ -416,9 +449,11 @@ top_ten_trips_m <- trip_totals(d_station_trip_totals, 'member')
 ## using openstreetmap for bounding box info for
 ## mapping
 
-bbox <- c(left = -87.7203, bottom = 41.7979,right = -87.5332, top = 41.8967)
+chicago_map <- get_stamenmap(
+  bbox <- c(left = -87.7086, bottom = 41.7840, right = -87.5890, top = 41.9050)
+  ,maptype = "terrain"
+  ,zoom = 13)
 
-chicago_map <- get_stamenmap(bbox = bbox, zoom = 13, maptype = 'terrain')
 
 gc()
 

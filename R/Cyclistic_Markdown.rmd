@@ -1,0 +1,682 @@
+---
+title: Divvy Data Project
+author: Matthew Mahoney
+output: 
+  html_document:
+    code_folding: show
+  
+---
+
+## Import libraries
+
+```{r import-libraries, results = 'hide', message = FALSE, }
+library(ggmap)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(maps)
+library(ggthemes)
+library(ggrepel)
+library(data.table)
+library(broom)
+library(gridExtra)
+library(knitr)
+```
+
+```{r functions-chunk, echo=FALSE}
+
+### create function to find mode
+
+getmode <- function(x){
+  u <- unique(x)
+  t <- tabulate(match(x, u))
+  return(u[t == max(t)])
+}
+
+### Donut graphs require same inputs, created function to clean up code
+
+createDonut <- function (x, filter_text){
+  
+  x %>%
+    filter(member_type == filter_text) -> x_prime
+  
+  x_prime$fraction <- x_prime$ride_count/
+    sum(x_prime$ride_count)
+  x_prime$ymax <- cumsum(x_prime$fraction)
+  x_prime$ymin <- c(0, head(x_prime$ymax, n=-1))
+  x_prime$labelPosition <- (x_prime$ymax + x_prime$ymin)/2
+  x_prime$season <- c('Winter', 'Spring', 'Summer', 'Fall')
+  
+  return(x_prime)
+  
+}
+  
+getDateString <- function(x){
+
+  daysofweek <- c('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+                  'Friday', 'Saturday')
+  
+  return(daysofweek[x])
+    
+}
+
+
+### Trip totals are calculated the same for both tables
+### created function to reduce redundancy
+
+trip_totals <- function (table_in, filter_name){
+  
+  ## Create Top_ten_trips table including both counts and lat/lon
+  ## coordinates
+  
+  table_in %>%
+    filter(member_type == filter_name) -> a
+  
+  merge(x = a, y = r_station_pairs,
+        by = 'pair_id') %>%
+    arrange(desc(trip_count)) %>%
+    subset(select = c('start_station_id', 'end_station_id', 'trip_count')) %>%
+    head(10) -> b
+  
+  
+  ##Add coordinate information to top_ten_stations using r_station_lat_lng
+  merge(x = r_station_lat_lng, y = b,
+        by.x = 'station_id', by.y = 'start_station_id') %>%
+    merge(y = r_station_lat_lng, by.x = 'end_station_id', 
+          by.y = 'station_id') -> b
+  
+  b <- setcolorder(b, c(2,3,4,1,6,7,5))
+  
+  return(b)
+}
+```
+
+```{R theme-preset, echo=FALSE}
+## create theme preset for future graphs
+baseTheme <-   theme_classic() +
+  theme(plot.title = element_text(hjust = .5, size = 13, face = 'bold',
+                                  family = 'serif'),
+        panel.background = element_rect(fill = "#3f403f"),
+        plot.background =  element_rect(fill = "#BEBEBE"),
+        axis.text.x = element_text(color =  "black", family = 'serif'),
+        axis.text.y = element_text(color =  "black", family = 'serif'),
+        strip.text = element_text(size = 11, family = 'serif'))
+
+axisScale <- 1000
+yScaleMax <- 1000
+yScaleMin <- 0
+byValue <- 50
+
+
+## x-axis values for graphs
+discreteX <- scale_x_discrete(name = 'day of week',
+                 limits = c('sun','mon','tue','wed','thur','fri','sat'))
+## y-axis values for graphs
+continuousY <-  scale_y_continuous(name = paste("total_rides (",
+                                                axisScale, '\'s)'),
+                     seq(yScaleMin, yScaleMax,by=byValue),
+                     labels = scales::comma)
+
+```
+
+## Data Import
+
+```{r data-import, results=FALSE, warning=FALSE, class.source='fold-hide'}
+
+## Data Import
+
+list.files(pattern = 'd_ride') %>%
+  map_df(~fread(header = FALSE, .)) -> d_ride_table
+
+r_station_lat_lng <- read.csv(
+  "cyclistic_r_station_lat_lon.csv", 
+                              header = FALSE)
+r_station_table <- read.csv(
+  "cyclistic_r_station_table.csv", 
+                            header = FALSE)
+
+setDT(d_ride_table)
+
+### rename columns
+
+names(r_station_lat_lng) <- c('station_id', 'lat', 'lon')
+names(d_ride_table) <- c('ride_id', 'rideable_type', 'started_at', 'ended_at',
+                         'start_station_id', 'end_station_id',
+                         'member_casual', 'ride_in_seconds',
+                         'ride_length', 'year_of_ride', 'month_of_ride',
+                         'day_of_week')
+names(r_station_table) <- c('station_name', 'station_key')
+
+### reclassify datetimes as POSIX
+d_ride_table$started_at <- as_datetime(d_ride_table$started_at)
+d_ride_table$ended_at <- as_datetime(d_ride_table$ended_at)
+```
+
+```{R table-creation, include=FALSE}
+
+###Table Creation
+
+## create ride table with only casual member entries    
+d_ride_table %>% filter(member_casual == 'casual') -> d_ride_table_c
+
+setDT(d_ride_table_c)
+
+
+## create ride table with only member entries
+d_ride_table %>% filter(member_casual == 'member') -> d_ride_table_m
+
+setDT(d_ride_table_m)
+
+
+#create a table containing all start/end station pairs in the data set
+d_ride_table %>%
+  subset(select = c('start_station_id', 'end_station_id')) %>%
+  unique() -> r_station_pairs
+
+
+#create unique id for each pair of start/end stations
+r_station_pairs$pair_id <- c(1:nrow(r_station_pairs)) 
+r_station_pairs <- setcolorder(r_station_pairs, c(3,1,2)) #reorder columns
+
+
+## Create final station pair table with station_names
+merge(x = r_station_pairs, y = r_station_table,
+      by.x = 'start_station_id', by.y = 'station_key') %>%
+  merge(y = r_station_table, by.x = 'end_station_id', by.y = 'station_key') -> 
+  r_station_pairs
+r_station_pairs <- setcolorder(r_station_pairs,c(3,4,2,5,1)) #reorder columns
+names(r_station_pairs)[2] <- 'start_station_name' #rename column
+names(r_station_pairs)[4] <- 'end_station_name' #rename column
+
+setDT(r_station_pairs)
+
+
+#create table containing all rides and include start/end station pair ids
+d_ride_table %>%
+  subset(select = c('ride_id', 'start_station_id', 'end_station_id', 
+                    'member_casual')) -> d_ride_table_prime
+
+merge(x=d_ride_table_prime, y=r_station_pairs,
+      by.x = c('start_station_id', 'end_station_id'),
+      by.y = c('start_station_id', 'end_station_id')) -> d_station_pair_merge
+
+
+
+d_station_pair_merge <- setcolorder(d_station_pair_merge,
+                                    c(3,4,1,2)) #reorder columns
+rm(d_ride_table_prime)
+
+
+#create table with total trips taken from all station pairs
+  d_station_pair_merge[, .(.N), by = .(pair_id, 
+                       member_casual)] -> d_station_trip_totals
+  
+names(d_station_trip_totals) <- c('pair_id', 'member_type', 'trip_count')
+setcolorder(d_station_trip_totals, c(1,3,2)) #reorder columns
+
+
+#Create table that counts bike type by member status.
+#Removed docked_bike option as it is not used by members
+#So there is no comparison to be made
+rideable_type_count <- d_ride_table %>%
+  subset(select = c(rideable_type, member_casual)) %>%
+  group_by(rideable_type, member_casual) %>%
+  summarize(Count = length(rideable_type)) %>%
+  filter(rideable_type != "docked_bike")
+
+```
+
+## Analysis{.tabset}
+
+### Plots
+
+Following data import and table creation, I begin my analysis finding
+the average ride length and the mode of the day of week for 
+each group using the service.
+
+```{r, results=FALSE}
+
+## find avg length of ride and the day of week mode for casual riders
+mean(d_ride_table_c$ride_in_seconds)/60 -> avg_ride_length_casual 
+getmode(d_ride_table_c$day_of_week) -> mode_dow_c
+
+
+## find avg length of ride and the day of week mode for members
+mean(d_ride_table_m$ride_in_seconds)/60 -> avg_ride_length_member
+getmode(d_ride_table_m$day_of_week) -> mode_dow_m
+
+mode_dow_c <- getDateString(mode_dow_c)
+mode_dow_m <- getDateString(mode_dow_m)
+
+```
+
+We find that for casual riders, the most common riding day is
+`r mode_dow_c`, and the most common day for members is `r mode_dow_m`.
+
+This is an interesting insight already, and leads me to believe that it
+may be possible that casual riders are riding more on weekends because
+they do not use the service to commute to a job.
+
+Continuing on this path, I create a table that contains the average ride
+length by day for both members and casual riders, and also one that
+checks the number of rides by day of week over 12 months of data.
+
+```{r, include=FALSE}
+# create data frame for day and ride length information
+dow <- c(1,1,2,2,3,3,4,4,5,5,6,6,7,7)
+d_avg_ride_by_day <- data.frame(matrix(nrow = length(dow), ncol = 3))
+colnames(d_avg_ride_by_day) = c('day', 'ride_length', 'member_type')
+
+d_avg_ride_by_day$day <- dow
+```
+
+```{r, message=FALSE}
+
+## find avg ride length by day for members and store in a table
+d_ride_table %>%
+  subset(select = c(day_of_week, ride_in_seconds, member_casual)) %>%
+  group_by(day_of_week, member_casual) %>%
+  summarize(avg_ride = round(mean(ride_in_seconds)/60,
+                             digits= 3)) -> a
+
+d_avg_ride_by_day$ride_length <- a$avg_ride 
+d_avg_ride_by_day$member_type <- a$member_casual 
+
+rm(a)
+```
+
+Graphing these leads to an interesting insight.
+
+```{R echo=FALSE}
+
+## Plot Average ride length for members and casual riders
+d_avg_ride_by_day %>%
+  ggplot(aes(x = day, y = ride_length)) +
+  ggtitle("Avg Ride Length, Member vs Casual Monday to Sunday") +
+  geom_col(position = position_dodge(.9), aes(fill = member_type),
+           color = 'grey') +
+  discreteX +
+  scale_y_continuous(name = "Ride_Length (mins)",
+                     seq(0,30,by=5), labels = scales::number) +
+  geom_text(aes(label = round(ride_length,2), group = member_type),  
+            color = 'black', size = 3, position = position_dodge(0.9),
+            vjust = 1.5) +
+  scale_fill_brewer(palette = "Paired") +
+  baseTheme
+
+```
+
+```{R, echo=FALSE}
+
+## Plot member ride count for the last 12 months by weekday
+ggplot(d_ride_table,
+       aes(x=day_of_week)) +
+  ggtitle("Rides by Weekday Monday to Sunday by Membership Type") +
+  geom_bar(
+    aes(y = after_stat(count)/axisScale),
+    fill = '#A1CDF4',
+    color = 'black',
+    alpha = 0.8) +
+  discreteX +
+  continuousY +
+  geom_text(
+    aes(y = after_stat(count)/axisScale, 
+        label = round(after_stat(count)/axisScale,1)),
+    stat="count", vjust = 1.5, size = 3) +
+  facet_wrap(~member_casual) +
+  baseTheme
+
+```
+
+The above graphs show that members take shorter more consistent rides,
+and also ride more frequently during the week day, while casual riders
+take longer more varied rides, and ride more during the weekends. This
+makes a strong case that members use the service for activities like
+commuting or scheduled exercise, while casual riders likely use the
+service more commonly for joy riding, or weekend activities.
+
+Next I want to take a look at seasonal ridership, to do this, I create a
+new table that contains a count of rides taken by the two rider types in
+each season.
+
+```{r, echo=FALSE}
+sm <- -2 #start month
+em <- 0 #end month
+
+## loop through filtered tables to find the number of 
+## rides in different seasons. increment sm & em by 3 to create
+## seasonal ranges
+## add the results to the rides_by_season table
+
+#generate empty vectors to fill the columns in rides_by_season table 
+season <- c()
+ride_count <- c()
+member_type <- c()
+```
+Additional code hidden here.
+```{r, results=FALSE, class.source = 'fold-hide'}
+
+## Loop to generate values for season, ride_count, and member_type
+for (j in 1:4){ #begin for
+   
+  sm <- sm + 3 ## add 3 to both values to get next season range
+  em <- em + 3
+  
+
+d_ride_table_c %>%
+  filter(month_of_ride >= sm & month_of_ride <= em) %>% ## filter for month range
+  summarize(count_r = n()) -> a
+
+ride_count <- append(ride_count, a$count_r) ##append to vectors
+season <- append(season, j)
+member_type <- append(member_type, 'casual')
+
+d_ride_table_m %>%  
+  ## filter for month range
+  filter(month_of_ride >= sm & month_of_ride <= em) %>% 
+  summarize(count_r = n()) -> b
+
+ride_count <- append(ride_count, b$count_r) ##append to vectors
+season <- append(season, j)
+member_type <- append(member_type, 'member')
+  
+  rm(a,b)
+  
+} # end for
+
+```
+
+```{r}
+
+#create new data frame with vectors
+d_rides_by_season <- data.frame(season, ride_count, member_type) 
+
+rm(sm,em,j, season, ride_count, member_type)
+```
+
+```{r, include=FALSE}
+gc()
+
+```
+
+Visualizing this data, we find what we would likely expect, especially
+considering the weather patterns in a place like Chicago.
+
+```{R, echo=FALSE}
+
+##create tables for donut graphs
+d_rides_by_season_c <- createDonut(d_rides_by_season, 'casual')
+d_rides_by_season_m <- createDonut(d_rides_by_season, 'member')
+
+
+##create donut graph visual preset
+donutTheme <-  theme_void() + 
+  theme(plot.title = element_text(hjust = 0.5,size = 20, face = 'bold',
+                                  family = 'serif'))+
+  theme(plot.background = element_rect(fill = "#f0f0f0") ) +
+  theme(legend.position = 'none')
+
+
+## plot donut graphs for casual riders and members
+## for rides per season
+ggplot(d_rides_by_season_c, aes(ymax = ymax, ymin = ymin, xmax = 4,
+                                xmin =3, fill = season)) +
+  ggtitle("Rides by Season Casual") +
+  geom_rect()+
+  coord_polar(theta = 'y') +
+  xlim(c(0.5,4))+
+  scale_fill_brewer(palette = "Spectral") +
+  geom_text(x=3.5, aes(y = labelPosition, label = season, fontface = 'bold'), size=3) +
+  geom_text(x = 4.5, aes(y = labelPosition-0.02,
+                         label = paste(round(fraction*100, 2), '%')), size=2.5) +
+  
+  donutTheme -> g_1 ## assign graph 1
+  
+ggplot(d_rides_by_season_m, aes(ymax = ymax, ymin = ymin, xmax = 4,
+                                xmin =3, fill = season)) +
+  ggtitle("Rides by Season Member") +
+  geom_rect()+
+  coord_polar(theta = 'y') +
+  xlim(c(0.5,4))+
+  scale_fill_brewer(palette = "Spectral") +
+  geom_text(x=3.5, aes(y = labelPosition, label = season, fontface = 'bold'), size=3) +
+  geom_text(x = 4.5, aes(y = labelPosition+0.02,
+                         label = paste(round(fraction*100, 2), '%')),size = 2.5) +
+  
+  donutTheme -> g_2 ## assign graph 2
+
+grid.arrange(g_1, g_2, ncol=2, respect = TRUE)
+```
+
+We find that generally ridership is dispersed equally for casual riders
+and members. However, members do ride more in colder months than casual
+riders do. Though this is a relatively small difference, it could
+suggest that members do choose to ride more even in the colder months as
+they use the service for necessary tasks like commuting.
+
+The final relationship I'd like to take a look at is the types of bikes
+that casual riders and members use.
+
+
+```{R, echo=FALSE}
+
+##Plot bike type usage for both casual and member riders
+rideable_type_count %>%
+  ggplot(aes(rideable_type, Count/1000)) +
+  ggtitle("Bike Type Usage Member vs Casual") +
+  geom_col(position = position_dodge(.8),
+           width = .75,
+           aes(fill = member_casual), 
+           color = 'grey') +
+  geom_text(aes(label = round(rideable_type_count$Count/1000, 1), 
+                group = member_casual),
+            position = position_dodge(.8), vjust = 1.5) +
+  xlab('Bike Type') +
+  ylab("Ride count (1000's)") +
+  scale_fill_brewer(palette = "Paired") +
+  baseTheme
+
+```
+
+```{r, echo=FALSE}
+rideable_type_count %>%
+  group_by(member_casual) %>%
+  mutate(percent = round(Count/sum(Count),4)*100) -> a
+```
+
+Casual members use classic bikes `r a$percent[1]`% of the time and
+electric bikes `r a$percent[3]`% of the time, while members use classic
+bikes `r a$percent[2]`% of the time and electric bikes `r a$percent[4]`%
+of the time.
+
+This is also reflected in the visualization of the counts above. We can
+clearly see that even though members use the service at higher rates,
+their usage shows a preference to classic bikes.
+
+Another thing to look at is rides during time of day. I start by taking
+a sample from the main dataset d_ride_table and creating a plot for
+which hours of the day casual/members use bikes the most. The margin of
+error for a sample of 10000 for this population size at 95% confidence
+is 0.96%
+
+```{r}
+d_ride_table_sample <- sample_n(d_ride_table,10000) %>%
+  subset(select = c(member_casual, started_at,ended_at)) %>%
+  mutate(hour_of_ride = format(as.POSIXct(started_at), format = "%H"))
+```
+
+```{r, echo=FALSE}
+  ggplot(d_ride_table_sample, aes(x=hour_of_ride, fill = member_casual,
+                                  group = member_casual)) +
+    geom_bar(aes(y=after_stat(count)), position = position_dodge(0.9)) +
+    scale_fill_brewer(palette = "Pastel1") +
+    theme_bw()
+```
+
+### Mapping
+```{r}
+## Create tables for the top ten trips for casual and member riders
+
+top_ten_trips_c <- trip_totals(d_station_trip_totals, 'casual')
+top_ten_trips_m <- trip_totals(d_station_trip_totals, 'member')
+
+## using openstreetmap for bounding box info for
+
+bbox <- c(left = -87.6597, bottom = 41.8454,right = -87.5931, top = 41.9181)
+
+chicago_map <- get_stamenmap(bbox, zoom = 13, maptype = 'terrain')
+```
+
+```{r, include=FALSE}
+gc()
+```
+
+```{r, include=FALSE}
+gc()
+```
+
+### Table Index
+
+```{r, echo=FALSE}
+
+## ride table with only casual member entries    
+
+knitr::kable(head(d_ride_table_c,5))
+
+```
+
+```{r, eval=FALSE}
+## create ride table with only member entries
+d_ride_table %>% filter(member_casual == 'member') -> d_ride_table_m
+
+setDT(d_ride_table_m)
+
+
+#create a table containing all start/end station pairs in the data set
+d_ride_table %>%
+  subset(select = c('start_station_id', 'end_station_id')) %>%
+  unique() -> r_station_pairs
+
+
+#create unique id for each pair of start/end stations
+r_station_pairs$pair_id <- c(1:nrow(r_station_pairs)) 
+r_station_pairs <- setcolorder(r_station_pairs, c(3,1,2)) #reorder columns
+
+
+## Create final station pair table with station_names
+merge(x = r_station_pairs, y = r_station_table,
+      by.x = 'start_station_id', by.y = 'station_key') %>%
+  merge(y = r_station_table, by.x = 'end_station_id', by.y = 'station_key') -> 
+  r_station_pairs
+r_station_pairs <- setcolorder(r_station_pairs,c(3,4,2,5,1)) #reorder columns
+names(r_station_pairs)[2] <- 'start_station_name' #rename column
+names(r_station_pairs)[4] <- 'end_station_name' #rename column
+
+setDT(r_station_pairs)
+
+
+#create table containing all rides and include start/end station pair ids
+d_ride_table %>%
+  subset(select = c('ride_id', 'start_station_id', 'end_station_id', 
+                    'member_casual')) -> d_ride_table_prime
+
+merge(x=d_ride_table_prime, y=r_station_pairs,
+      by.x = c('start_station_id', 'end_station_id'),
+      by.y = c('start_station_id', 'end_station_id')) -> d_station_pair_merge
+
+
+
+d_station_pair_merge <- setcolorder(d_station_pair_merge,
+                                    c(3,4,1,2)) #reorder columns
+rm(d_ride_table_prime)
+
+
+#create table with total trips taken from all station pairs
+  d_station_pair_merge[, .(.N), by = .(pair_id, 
+                       member_casual)] -> d_station_trip_totals
+  
+names(d_station_trip_totals) <- c('pair_id', 'member_type', 'trip_count')
+setcolorder(d_station_trip_totals, c(1,3,2)) #reorder columns
+
+
+#Create table that counts bike type by member status.
+#Removed docked_bike option as it is not used by members
+#So there is no comparison to be made
+rideable_type_count <- d_ride_table %>%
+  subset(select = c(rideable_type, member_casual)) %>%
+  group_by(rideable_type, member_casual) %>%
+  summarize(Count = length(rideable_type)) %>%
+  filter(rideable_type != "docked_bike")
+
+```
+
+### Functions Index
+
+```{r, eval=FALSE}
+
+### create function to find mode
+
+getmode <- function(x){
+  u <- unique(x)
+  t <- tabulate(match(x, u))
+  return(u[t == max(t)])
+}
+
+### Donut graphs require same inputs, created function to clean up code
+
+createDonut <- function (x, filter_text){
+  
+  x %>%
+    filter(member_type == filter_text) -> x_prime
+  
+  x_prime$fraction <- x_prime$ride_count/
+    sum(x_prime$ride_count)
+  x_prime$ymax <- cumsum(x_prime$fraction)
+  x_prime$ymin <- c(0, head(x_prime$ymax, n=-1))
+  x_prime$labelPosition <- (x_prime$ymax + x_prime$ymin)/2
+  x_prime$season <- c('Winter', 'Spring', 'Summer', 'Fall')
+  
+  return(x_prime)
+  
+}
+  
+getDateString <- function(x){
+
+  daysofweek <- c('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+                  'Friday', 'Saturday')
+  
+  return(daysofweek[x])
+    
+}
+
+
+### Trip totals are calculated the same for both tables
+### created function to reduce redundancy
+
+trip_totals <- function (table_in, filter_name){
+  
+  ## Create Top_ten_trips table including both counts and lat/lon
+  ## coordinates
+  
+  table_in %>%
+    filter(member_type == filter_name) -> a
+  
+  merge(x = a, y = r_station_pairs,
+        by = 'pair_id') %>%
+    arrange(desc(trip_count)) %>%
+    subset(select = c('start_station_id', 'end_station_id', 'trip_count')) %>%
+    head(10) -> b
+  
+  
+  ##Add coordinate information to top_ten_stations using r_station_lat_lng
+  merge(x = r_station_lat_lng, y = b,
+        by.x = 'station_id', by.y = 'start_station_id') %>%
+    merge(y = r_station_lat_lng, by.x = 'end_station_id', 
+          by.y = 'station_id') -> b
+  
+  b <- setcolorder(b, c(2,3,4,1,6,7,5))
+  
+  return(b)
+}
+```
