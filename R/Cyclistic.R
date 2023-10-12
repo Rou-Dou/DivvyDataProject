@@ -416,9 +416,9 @@ top_ten_trips_m <- trip_totals(d_station_trip_totals, 'member')
 ## using openstreetmap for bounding box info for
 ## mapping
 
-bbox <- c(left = -87.7203, bottom = 41.7979,right = -87.5332, top = 41.8967)
+bbox <- c(left = -87.6597, bottom = 41.8454,right = -87.5931, top = 41.9181)
 
-chicago_map <- get_stamenmap(bbox = bbox, zoom = 13, maptype = 'terrain')
+chicago_map <- get_stamenmap(bbox, zoom = 13, maptype = 'terrain')
 
 gc()
 

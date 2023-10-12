@@ -4,7 +4,6 @@ author: "Matthew Mahoney"
 output:
   html_document:
     code_folding: show
-  pdf_document: default
 ---
 
 ```{r, setup, include = FALSE}
@@ -14,6 +13,7 @@ knitr::opts_chunk$set(warning = FALSE, message=FALSE)
 ## Import libraries
 
 ```{r import-libraries, results = 'hide'}
+library(remotes)
 library(ggmap)
 library(tidyverse)
 library(lubridate)
@@ -24,10 +24,6 @@ library(data.table)
 library(broom)
 library(gridExtra)
 library(knitr)
-```
-
-```{r, include=FALSE}
-register_stadiamaps('69258451-dd34-4cd9-809f-5461b30fdc9e')
 ```
 
 ```{r functions-chunk, echo=FALSE}
@@ -132,14 +128,14 @@ continuousY <-  scale_y_continuous(name = paste("total_rides (",
 
 ## Data Import
 
-d_ride_table <- list.files(pattern = 'd_ride') %>%
-  map_df(~fread(header = FALSE, .))
+list.files(pattern = 'd_ride') %>%
+  map_df(~fread(header = FALSE, .)) -> d_ride_table
 
 r_station_lat_lng <- read.csv(
-"/cyclistic_r_station_lat_lon.csv",
+"cyclistic_r_station_lat_lon.csv",
                               header = FALSE)
 r_station_table <- read.csv(
-  "/cyclistic_r_station_table.csv", 
+  "cyclistic_r_station_table.csv", 
                             header = FALSE)
 
 setDT(d_ride_table)
@@ -532,6 +528,7 @@ d_hour_of_day_table %>%
 ```
 
 ### Mapping
+
 
 ```{r, class.source = 'fold-hide', results = FALSE}
 ## Create tables for the top ten trips for casual and member riders
