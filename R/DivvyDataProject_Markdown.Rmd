@@ -29,6 +29,7 @@ library(knitr)
 ```{r, install stadiamaps, class.source = 'fold-hide'}
 # Required if you have not pulled the most recent changes to ggmap
 # remotes::install_github('https://github.com/stadiamaps/ggmap')
+register_stadiamaps('69258451-dd34-4cd9-809f-5461b30fdc9e')
 ```
 
 ```{r functions-chunk, echo=FALSE}
