@@ -13,9 +13,9 @@ knitr::opts_chunk$set(warning = FALSE, message=FALSE)
 ## Import libraries
 
 ```{r import-libraries, results = 'hide'}
+library(tidyverse)
 library(remotes)
 library(ggmap)
-library(tidyverse)
 library(lubridate)
 library(maps)
 library(ggthemes)
@@ -24,6 +24,11 @@ library(data.table)
 library(broom)
 library(gridExtra)
 library(knitr)
+```
+
+```{r, install stadiamaps, class.source = 'fold-hide'}
+# Required if you have not pulled the most recent changes to ggmap
+# remotes::install_github('https://github.com/stadiamaps/ggmap')
 ```
 
 ```{r functions-chunk, echo=FALSE}
