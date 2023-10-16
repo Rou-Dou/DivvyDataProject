@@ -26,6 +26,10 @@ library(gridExtra)
 library(knitr)
 ```
 
+```{r, register_stadiamaps_api, include=FALSE}
+register_stadiamaps('69258451-dd34-4cd9-809f-5461b30fdc9e')
+```
+
 ```{r functions-chunk, echo=FALSE}
 
 ### create function to find mode
@@ -273,6 +277,7 @@ colnames(d_avg_ride_by_day) = c('day', 'ride_length', 'member_type')
 d_avg_ride_by_day$day <- dow
 ```
 
+
 ```{r}
 
 ## find avg ride length by day for members and store in a table
@@ -496,7 +501,7 @@ clearly see that even though members use the service at higher rates,
 their usage shows a preference to classic bikes.
 
 Another thing to look at is rides during time of day. I start by taking
-a large sample of 100,000 from the main dataset d_ride_table and create 
+a large sample of 100,000 from the main dataset `d_ride_table` and create 
 a plot for which hours of the day casual riders/members use bikes the most.
 
 ```{r, class.source='fold-hide'}
@@ -527,6 +532,26 @@ d_hour_of_day_table %>%
 
 ```
 
+### Statistical Tests
+
+```{r, include=FALSE}
+d_ride_table$member_casual <- as.factor(d_ride_table$member_casual)
+d_ride_table$day_of_week <- as.factor(d_ride_table$day_of_week)
+```
+
+```{r}
+t_test_avg_ride_length <- d_ride_table %>%
+  select(ride_in_seconds, day_of_week, member_casual) %>%
+  group_by(day_of_week, member_casual) %>%
+  summarize(mean_ride_length = mean(ride_in_seconds)/60) %>%
+  t.test(mean_ride_length ~ member_casual, .)
+```
+
+We find that there is a real difference between the average ride lengths 
+for members and casual riders across all data, 
+with a p-value of `r t_test_avg_ride_length$p.value`
+
+
 ### Mapping
 
 
@@ -547,6 +572,10 @@ chicago_map <- get_stadiamap(
   zoom = 13) %>% ggmap()
 ```
 
+
+I've mapped all station locations within the main Chicago metropolitan area
+so we can see the general distribution of the stations.
+
 ```{r}
 
 ## Map all stations within the bounds of the top 10         
@@ -554,6 +583,9 @@ chicago_map +
   geom_point(data = r_station_lat_lng, aes(x = lon, y = lat))+
   ggtitle(label = 'Station Locations')
 ```
+
+
+A larger density of stations can be seen around the loop. In fact 
 
 ```{r}
 
