@@ -1,4 +1,4 @@
-USE Cyclistic
+USE Divvy
 GO
 	-- create stations table
 
@@ -6,16 +6,16 @@ DROP TABLE dbo.r_station_table
 GO
 
 SELECT start_station_name AS station_name
-INTO Cyclistic.dbo.r_station_table
+INTO Divvy.dbo.r_station_table
 FROM
 	(
 	SELECT start_station_name
-	FROM Cyclistic.dbo.d_trips_12months
+	FROM Divvy.dbo.d_trips_12months
 
 UNION
 	
 	SELECT end_station_name
-	FROM Cyclistic.dbo.d_trips_12months
+	FROM Divvy.dbo.d_trips_12months
 	) AS table_1
 GO
 	
@@ -52,7 +52,7 @@ FROM
 	SELECT ride_id, rideable_type, started_at, ended_at, start_station_id
 	,end_station_id, member_casual, ride_in_seconds, ride_length, year_of_ride
 	,month_of_ride, day_of_week
-	FROM Cyclistic.dbo.d_trips_12months
+	FROM Divvy.dbo.d_trips_12months
 	) AS table_2
 GO
 

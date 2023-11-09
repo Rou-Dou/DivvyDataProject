@@ -6,6 +6,7 @@ output:
     code_folding: show
 ---
 
+
 ```{r, setup, include = FALSE}
 knitr::opts_chunk$set(warning = FALSE, message=FALSE)
 ```
@@ -30,6 +31,7 @@ library(knitr)
 register_stadiamaps('69258451-dd34-4cd9-809f-5461b30fdc9e')
 ```
 
+
 ```{r functions-chunk, echo=FALSE}
 
 ### create function to find mode
@@ -40,19 +42,29 @@ getmode <- function(x){
   return(u[t == max(t)])
 }
 
+### Create function to output season names based on integer
+
+getSeason <- function(x) {
+  
+  seasons <- c("Winter", "Spring", "Summer", "Fall")
+  
+  return(seasons[x])
+  
+}
+
+
 ### Donut graphs require same inputs, created function to clean up code
 
 createDonut <- function (x, filter_text){
   
   x %>%
-    filter(member_type == filter_text) -> x_prime
+    filter(member_casual == filter_text) -> x_prime
   
   x_prime$fraction <- x_prime$ride_count/
     sum(x_prime$ride_count)
   x_prime$ymax <- cumsum(x_prime$fraction)
   x_prime$ymin <- c(0, head(x_prime$ymax, n=-1))
   x_prime$labelPosition <- (x_prime$ymax + x_prime$ymin)/2
-  x_prime$season <- c('Winter', 'Spring', 'Summer', 'Fall')
   
   return(x_prime)
   
@@ -163,18 +175,6 @@ d_ride_table$ended_at <- as_datetime(d_ride_table$ended_at)
 
 ###Table Creation
 
-## create ride table with only casual member entries    
-d_ride_table %>% filter(member_casual == 'casual') -> d_ride_table_c
-
-setDT(d_ride_table_c)
-
-
-## create ride table with only member entries
-d_ride_table %>% filter(member_casual == 'member') -> d_ride_table_m
-
-setDT(d_ride_table_m)
-
-
 #create a table containing all start/end station pairs in the data set
 d_ride_table %>%
   subset(select = c('start_station_id', 'end_station_id')) %>%
@@ -243,14 +243,29 @@ each group using the service.
 
 ```{r, results=FALSE}
 
-## find avg length of ride and the day of week mode for casual riders
-mean(d_ride_table_c$ride_in_seconds)/60 -> avg_ride_length_casual 
-getmode(d_ride_table_c$day_of_week) -> mode_dow_c
+## find avg length of ride and the day of week mode for casual and member riders
+
+d_avg_ride_by_day <- d_ride_table %>%
+  select(day_of_week, ride_in_seconds, member_casual) %>%
+  group_by(day_of_week, member_casual) %>%
+  summarize(avg_ride_length = round(mean(ride_in_seconds)/60,digits=3))
 
 
-## find avg length of ride and the day of week mode for members
-mean(d_ride_table_m$ride_in_seconds)/60 -> avg_ride_length_member
-getmode(d_ride_table_m$day_of_week) -> mode_dow_m
+c <- d_ride_table %>%
+  filter(member_casual == 'casual') %>%
+  select(day_of_week)
+
+mode_dow_c <- getmode(c$day_of_week)
+
+rm(c)
+
+m <- d_ride_table %>%
+  filter(member_casual == 'member') %>%
+  select(day_of_week)
+
+mode_dow_m <- getmode(m$day_of_week)
+
+rm(m)
 
 mode_dow_c <- getDateString(mode_dow_c)
 mode_dow_m <- getDateString(mode_dow_m)
@@ -268,45 +283,20 @@ Continuing on this path, I create a table that contains the average ride
 length by day for both members and casual riders, and also one that
 checks the number of rides by day of week over 12 months of data.
 
-```{r, include=FALSE}
-# create data frame for day and ride length information
-dow <- c(1,1,2,2,3,3,4,4,5,5,6,6,7,7)
-d_avg_ride_by_day <- data.frame(matrix(nrow = length(dow), ncol = 3))
-colnames(d_avg_ride_by_day) = c('day', 'ride_length', 'member_type')
-
-d_avg_ride_by_day$day <- dow
-```
-
-
-```{r}
-
-## find avg ride length by day for members and store in a table
-d_ride_table %>%
-  subset(select = c(day_of_week, ride_in_seconds, member_casual)) %>%
-  group_by(day_of_week, member_casual) %>%
-  summarize(avg_ride = round(mean(ride_in_seconds)/60,
-                             digits= 3)) -> a
-
-d_avg_ride_by_day$ride_length <- a$avg_ride 
-d_avg_ride_by_day$member_type <- a$member_casual 
-
-rm(a)
-```
-
 Graphing these leads to an interesting insight.
 
 ```{R echo=FALSE}
 
 ## Plot Average ride length for members and casual riders
 d_avg_ride_by_day %>%
-  ggplot(aes(x = day, y = ride_length)) +
+  ggplot(aes(x = day_of_week, y = avg_ride_length)) +
   ggtitle("Avg Ride Length, Member vs Casual Monday to Sunday") +
-  geom_col(position = position_dodge(.9), aes(fill = member_type),
+  geom_col(position = position_dodge(.9), aes(fill = member_casual),
            color = 'grey') +
   discreteX +
   scale_y_continuous(name = "Ride_Length (mins)",
                      seq(0,30,by=5), labels = scales::number) +
-  geom_text(aes(label = round(ride_length,2), group = member_type),  
+    geom_text(aes(label = round(avg_ride_length,2), group = member_casual),  
             color = 'black', size = 3, position = position_dodge(0.9),
             vjust = 1.5) +
   scale_fill_brewer(palette = "Paired") +
@@ -336,6 +326,8 @@ ggplot(d_ride_table,
 
 ```
 
+
+
 The above graphs show that members take shorter more consistent rides,
 and also ride more frequently during the week days, while casual riders
 take longer more varied rides, and ride more during the weekends. This
@@ -351,55 +343,41 @@ each season.
 sm <- -2 #start month
 em <- 0 #end month
 
+
 ## loop through filtered tables to find the number of 
 ## rides in different seasons. increment sm & em by 3 to create
 ## seasonal ranges
 ## add the results to the rides_by_season table
 
-#generate empty vectors to fill the columns in rides_by_season table 
-season <- c()
-ride_count <- c()
-member_type <- c()
 ```
 Additional code hidden here.
+
 ```{r, results=FALSE, class.source = 'fold-hide'}
 
-## Loop to generate values for season, ride_count, and member_type
+## Loop to generate values for season
 for (j in 1:4){ #begin for
    
   sm <- sm + 3 ## add 3 to both values to get next season range
   em <- em + 3
   
 
-d_ride_table_c %>%
-  filter(month_of_ride >= sm & month_of_ride <= em) %>% ## filter for month range
-  summarize(count_r = n()) -> a
-
-ride_count <- append(ride_count, a$count_r) ##append to vectors
-season <- append(season, j)
-member_type <- append(member_type, 'casual')
-
-d_ride_table_m %>%  
-  ## filter for month range
-  filter(month_of_ride >= sm & month_of_ride <= em) %>% 
-  summarize(count_r = n()) -> b
-
-ride_count <- append(ride_count, b$count_r) ##append to vectors
-season <- append(season, j)
-member_type <- append(member_type, 'member')
-  
-  rm(a,b)
+d_ride_table <- d_ride_table %>%
+  .[month_of_ride >= sm & month_of_ride <= em, season:= as.factor(getSeason(j))] %>%
+  select(ride_id, season) %>%
+    d_ride_table[., on='ride_id']
   
 } # end for
+
+d_ride_table <- d_ride_table[,-c(14,15,16,17)]
 
 ```
 
 ```{r}
+d_rides_by_season <- d_ride_table %>%
+  select(season, member_casual) %>%
+  .[, .(ride_count = .N), by = list(season, member_casual)] %>%
+  data.table()
 
-#create new data frame with vectors
-d_rides_by_season <- data.frame(season, ride_count, member_type) 
-
-rm(sm,em,j, season, ride_count, member_type)
 ```
 
 ```{r, include=FALSE}
@@ -488,7 +466,8 @@ rideable_type_count %>%
 ```{r, echo=FALSE}
 rideable_type_count %>%
   group_by(member_casual) %>%
-  mutate(percent = round(Count/sum(Count),4)*100) -> a
+  mutate(percent = round(Count/sum(Count),4)*100) -> rideable_type_count
+
 ```
 
 Casual members use classic bikes `r a$percent[1]`% of the time and
@@ -537,6 +516,36 @@ d_hour_of_day_table %>%
 ```{r, include=FALSE}
 d_ride_table$member_casual <- as.factor(d_ride_table$member_casual)
 d_ride_table$day_of_week <- as.factor(d_ride_table$day_of_week)
+
+d_hour_of_day_table$hour_of_ride <- as.factor(d_hour_of_day_table$hour_of_ride)
+d_hour_of_day_table$member_casual<- as.factor(d_hour_of_day_table$member_casual)
+
+d_rides_by_season$season <- as.factor(d_rides_by_season$season)
+d_rides_by_season$member_type <- as.factor(d_rides_by_season$member_type)
+```
+
+
+```{r}
+d_ride_table %>%
+  aov(ride_in_seconds ~ season + member_casual, .) %>%
+  summary()
+  
+
+```
+
+
+```{r}
+d_hour_of_day_table %>%
+  select(member_casual, n) %>%
+  t.test(n ~ member_casual, .)
+  
+```
+
+```{r}
+d_hour_of_day_table %>%
+  aov(n ~ hour_of_ride + member_casual, .) %>%
+  summary()
+
 ```
 
 ```{r}
@@ -550,6 +559,14 @@ t_test_avg_ride_length <- d_ride_table %>%
 We find that there is a real difference between the average ride lengths 
 for members and casual riders across all data, 
 with a p-value of `r t_test_avg_ride_length$p.value`
+
+```{r, chisq}
+
+d_ride_table %>%
+  select(member_casual, day_of_week) %>%
+  table() %>%
+  chisq.test()
+```
 
 
 ### Mapping
