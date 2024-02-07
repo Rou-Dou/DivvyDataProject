@@ -1,2 +1,3 @@
-*.Rmd linguist-language=RMarkdown
+*.Rmd linguist-language=R
+*.html linguist-language=R
 *.sql lingust-language=SQL
