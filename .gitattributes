@@ -1,2 +1,2 @@
 *.rmd linguist-language=R
-*.sql lingust-language=T-SQL
+*.sql lingust-language=TSQL
