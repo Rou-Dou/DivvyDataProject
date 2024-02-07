@@ -1,3 +1,2 @@
-*.Rmd linguist-language=R
-*.html linguist-language=R
-*.sql lingust-language=SQL
+*.rmd linguist-language=R
+*.sql lingust-language=TSQL
